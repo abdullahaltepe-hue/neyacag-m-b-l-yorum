@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LET GO OR HOLD ON</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --main: #00ffcc;
+      --accent: #ff0055;
+      --gold: #ff9900;
+      --bg: #050505;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--main);
+      font-family: 'Press Start 2P', cursive;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-y: auto;
+      text-align: center;
+    }
+
+    .scanlines {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-image: repeating-radial-gradient(circle, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 4px);
+      background-size: 4px 4px;
+      z-index: 200; pointer-events: none;
+    }
+    .crt-overlay {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle, rgba(18,16,16,0) 40%, rgba(0,0,0,0.5) 100%);
+      z-index: 201; pointer-events: none;
+    }
+
+    .back-btn {
+      position: fixed;
+      top: 20px; left: 20px;
+      padding: 8px 16px;
+      border: 1px solid var(--main);
+      background: transparent;
+      color: var(--main);
+      font-family: 'Press Start 2P', cursive;
+      font-size: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      z-index: 150;
+      transition: 0.3s;
+    }
+    .back-btn:hover { background: var(--main); color: #000; }
+
+    .page-title {
+      margin-top: 80px;
+      font-size: 22px;
+      color: var(--accent);
+      text-shadow: 3px 3px 0px #990033;
+      letter-spacing: 3px;
+      line-height: 1.6;
+    }
+    .subtitle {
+      margin-top: 18px;
+      font-size: 8px;
+      color: rgba(0,255,204,0.4);
+      letter-spacing: 2px;
+      line-height: 2;
+      max-width: 500px;
+      padding: 0 20px;
+    }
+
+    /* INPUT SECTION */
+    .input-section {
+      margin-top: 45px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 50;
+    }
+    .question-label {
+      font-size: 10px;
+      color: var(--gold);
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+      text-shadow: 0 0 10px rgba(255,153,0,0.3);
+    }
+    .retro-input {
+      width: 400px;
+      max-width: 90vw;
+      padding: 14px 18px;
+      background: rgba(0,255,204,0.04);
+      border: 1px solid rgba(0,255,204,0.25);
+      color: var(--main);
+      font-family: 'Calibri', 'Arial', sans-serif;
+      font-size: 15px;
+      text-align: center;
+      outline: none;
+      transition: 0.3s;
+    }
+    .retro-input:focus {
+      border-color: var(--main);
+      box-shadow: 0 0 15px rgba(0,255,204,0.15);
+    }
+    .retro-input::placeholder {
+      color: rgba(0,255,204,0.2);
+      font-family: 'Press Start 2P', cursive;
+      font-size: 8px;
+    }
+    .hint {
+      margin-top: 12px;
+      font-size: 6px;
+      color: rgba(0,255,204,0.3);
+    }
+
+    /* ANALYZING SCREEN */
+    .analyze-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 50px;
+      z-index: 50;
+    }
+    .analyze-text {
+      font-size: 10px;
+      color: var(--main);
+      letter-spacing: 3px;
+      animation: blink-text 0.5s infinite;
+    }
+    @keyframes blink-text {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .scan-bar-container {
+      margin-top: 25px;
+      width: 350px;
+      max-width: 85vw;
+      height: 3px;
+      background: rgba(0,255,204,0.1);
+      position: relative;
+      overflow: hidden;
+    }
+    .scan-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--main);
+      box-shadow: 0 0 10px var(--main);
+      transition: width 0.1s linear;
+    }
+
+    .scan-words {
+      margin-top: 18px;
+      font-size: 7px;
+      color: rgba(0,255,204,0.35);
+      letter-spacing: 1px;
+      height: 20px;
+      transition: opacity 0.2s;
+    }
+
+    .user-text-echo {
+      margin-top: 25px;
+      font-size: 9px;
+      color: rgba(255,0,85,0.5);
+      letter-spacing: 1px;
+      max-width: 400px;
+      word-break: break-word;
+      position: relative;
+    }
+    .user-text-echo::before {
+      content: '> ';
+      color: rgba(0,255,204,0.3);
+    }
+
+    /* RESULT SCREEN */
+    .result-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 50px;
+      z-index: 50;
+    }
+
+    .verdict {
+      font-size: 28px;
+      letter-spacing: 5px;
+      line-height: 1.5;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    .verdict.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .verdict.give-up {
+      color: var(--accent);
+      text-shadow: 0 0 30px rgba(255,0,85,0.5), 0 0 60px rgba(255,0,85,0.2);
+    }
+    .verdict.still-chance {
+      color: #00ff88;
+      text-shadow: 0 0 30px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2);
+    }
+
+    .verdict-sub {
+      margin-top: 18px;
+      font-size: 8px;
+      color: rgba(0,255,204,0.4);
+      letter-spacing: 2px;
+      max-width: 450px;
+      line-height: 2;
+      opacity: 0;
+      transition: opacity 0.6s ease 0.5s;
+    }
+    .verdict-sub.show { opacity: 1; }
+
+    .user-echo-result {
+      margin-top: 30px;
+      padding: 12px 25px;
+      border: 1px solid rgba(0,255,204,0.1);
+      background: rgba(0,255,204,0.02);
+      font-family: 'Calibri', 'Arial', sans-serif;
+      font-size: 14px;
+      color: rgba(0,255,204,0.35);
+      max-width: 400px;
+      word-break: break-word;
+      opacity: 0;
+      transition: opacity 0.6s ease 0.8s;
+    }
+    .user-echo-result.show { opacity: 1; }
+
+    .metrics {
+      margin-top: 30px;
+      display: flex;
+      gap: 30px;
+      opacity: 0;
+      transition: opacity 0.6s ease 1.1s;
+    }
+    .metrics.show { opacity: 1; }
+    .metric-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .metric-label {
+      font-size: 6px;
+      color: rgba(0,255,204,0.3);
+      letter-spacing: 2px;
+    }
+    .metric-value {
+      font-size: 16px;
+      color: var(--gold);
+      text-shadow: 0 0 8px rgba(255,153,0,0.3);
+    }
+
+    .retry-btn {
+      margin-top: 40px;
+      padding: 12px 28px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-family: 'Press Start 2P', cursive;
+      font-size: 8px;
+      cursor: pointer;
+      letter-spacing: 2px;
+      transition: 0.3s;
+      opacity: 0;
+      transition: opacity 0.6s ease 1.4s, background 0.3s, color 0.3s;
+    }
+    .retry-btn.show { opacity: 1; }
+    .retry-btn:hover {
+      background: var(--accent);
+      color: #000;
+    }
+
+    /* PARTICLES */
+    .particle {
+      position: fixed;
+      width: 2px;
+      height: 2px;
+      background: var(--main);
+      opacity: 0;
+      z-index: 10;
+      pointer-events: none;
+      animation: float-particle 4s infinite ease-in-out;
+    }
+    @keyframes float-particle {
+      0% { opacity: 0; transform: translateY(0) translateX(0); }
+      25% { opacity: 0.4; }
+      50% { opacity: 0.2; transform: translateY(-50px) translateX(20px); }
+      75% { opacity: 0.3; }
+      100% { opacity: 0; transform: translateY(-100px) translateX(-10px); }
+    }
+
+    /* GLITCH on result */
+    @keyframes glitch-1 {
+      0%, 100% { clip-path: inset(0 0 95% 0); transform: translate(0); }
+      20% { clip-path: inset(20% 0 60% 0); transform: translate(-3px, 2px); }
+      40% { clip-path: inset(50% 0 30% 0); transform: translate(3px, -1px); }
+      60% { clip-path: inset(70% 0 10% 0); transform: translate(-2px, 1px); }
+      80% { clip-path: inset(10% 0 80% 0); transform: translate(1px, -2px); }
+    }
+
+    .verdict-wrapper {
+      position: relative;
+    }
+    .verdict-glitch {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      opacity: 0.7;
+    }
+    .verdict-glitch.g1 {
+      color: #ff0055;
+      animation: glitch-1 2s infinite linear;
+    }
+    .verdict-glitch.g2 {
+      color: #00ffcc;
+      animation: glitch-1 2s infinite linear reverse;
+    }
+
+    /* MOBILE */
+    @media (max-width: 768px) {
+      .page-title { font-size: 16px; }
+      .retro-input { width: 90vw; }
+      .verdict { font-size: 20px; }
+      .metrics { gap: 15px; }
+      .metric-value { font-size: 13px; }
+    }
+    @media (max-width: 380px) {
+      .page-title { font-size: 13px; }
+      .verdict { font-size: 16px; }
+    }
+
+    .mb-40 { margin-bottom: 40px; }
+  </style>
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div class="crt-overlay"></div>
+
+  <a href="index.html" class="back-btn">&lt; BACK</a>
+
+  <div class="page-title">LET GO<br>OR HOLD ON</div>
+  <p class="subtitle">FIND OUT IF IT'S EVEN WORTH IT</p>
+
+  <!-- INPUT -->
+  <div class="input-section" id="inputSection">
+    <div class="question-label">WHAT ARE YOU STILL HOLDING ON TO?</div>
+    <input type="text" class="retro-input" id="userInput" placeholder="type it out..." autocomplete="off" maxlength="200">
+    <p class="hint">PRESS ENTER TO FIND OUT</p>
+  </div>
+
+  <!-- ANALYZING -->
+  <div class="analyze-screen" id="analyzeScreen">
+    <div class="analyze-text" id="analyzeText">SCANNING YOUR SOUL...</div>
+    <div class="scan-bar-container">
+      <div class="scan-bar" id="scanBar"></div>
+    </div>
+    <div class="scan-words" id="scanWords"></div>
+    <div class="user-text-echo" id="userTextEcho"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="result-screen mb-40" id="resultScreen">
+    <div class="verdict-wrapper">
+      <div class="verdict" id="verdict"></div>
+      <div class="verdict verdict-glitch g1" id="verdictG1" aria-hidden="true"></div>
+      <div class="verdict verdict-glitch g2" id="verdictG2" aria-hidden="true"></div>
+    </div>
+    <p class="verdict-sub" id="verdictSub"></p>
+    <div class="user-echo-result" id="userEchoResult"></div>
+    <div class="metrics" id="metrics">
+      <div class="metric-box">
+        <span class="metric-label">DENIAL LVL</span>
+        <span class="metric-value" id="metricDenial">--</span>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">ATTACHMENT</span>
+        <span class="metric-value" id="metricAttach">--</span>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">HOPE INDEX</span>
+        <span class="metric-value" id="metricHope">--</span>
+      </div>
+    </div>
+    <button class="retry-btn" id="retryBtn" onclick="resetAll()">TRY AGAIN</button>
+  </div>
+
+  <script>
+    const input = document.getElementById('userInput');
+    const inputSection = document.getElementById('inputSection');
+    const analyzeScreen = document.getElementById('analyzeScreen');
+    const resultScreen = document.getElementById('resultScreen');
+
+    // Floating particles
+    function spawnParticles() {
+      for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + 'vw';
+        p.style.top = Math.random() * 100 + 'vh';
+        p.style.animationDelay = (Math.random() * 4) + 's';
+        p.style.animationDuration = (3 + Math.random() * 3) + 's';
+        document.body.appendChild(p);
+      }
+    }
+    spawnParticles();
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && input.value.trim().length > 0) {
+        startAnalysis(input.value.trim());
+      }
+    });
+
+    function startAnalysis(text) {
+      inputSection.style.display = 'none';
+      analyzeScreen.style.display = 'flex';
+      document.getElementById('userTextEcho').textContent = text;
+
+      const scanPhrases = [
+        'READING EMOTIONAL PATTERNS...',
+        'CALCULATING ATTACHMENT DEPTH...',
+        'CHECKING DENIAL LEVELS...',
+        'MEASURING HOPE RESIDUE...',
+        'SCANNING VULNERABILITY INDEX...',
+        'PROCESSING PAIN THRESHOLD...',
+        'ANALYZING LETTING-GO CAPACITY...',
+        'CROSS-REFERENCING HEARTBREAK DB...',
+        'EVALUATING COPE MECHANISM...',
+        'RENDERING FINAL VERDICT...'
+      ];
+
+      const scanBar = document.getElementById('scanBar');
+      const scanWords = document.getElementById('scanWords');
+      const analyzeText = document.getElementById('analyzeText');
+      let progress = 0;
+      let phraseIdx = 0;
+
+      const interval = setInterval(() => {
+        progress += Math.random() * 4 + 1;
+        if (progress > 100) progress = 100;
+        scanBar.style.width = progress + '%';
+
+        if (progress > (phraseIdx + 1) * 10 && phraseIdx < scanPhrases.length) {
+          scanWords.textContent = scanPhrases[phraseIdx];
+          phraseIdx++;
+        }
+
+        if (progress >= 100) {
+          clearInterval(interval);
+          analyzeText.textContent = 'VERDICT READY';
+          analyzeText.style.animation = 'none';
+          analyzeText.style.opacity = '1';
+          setTimeout(() => showResult(text), 800);
+        }
+      }, 120);
+    }
+
+    function analyzeText(text) {
+      const lower = text.toLowerCase();
+      const len = text.length;
+
+      // Keywords that suggest it's already over / should give up
+      const giveUpWords = [
+        'ex', 'ghost', 'left me', 'cheated', 'toxic', 'blocked',
+        'moved on', 'doesnt care', "doesn't care", 'over', 'dead',
+        'gone', 'never coming back', 'hate', 'lie', 'lied',
+        'broke up', 'breakup', 'dumped', 'rejected', 'ignore',
+        'nothing', 'nobody', 'alone', 'pointless', 'impossible',
+        'fake', 'used me', 'manipulation', 'forgot me', 'replaced'
+      ];
+
+      // Keywords that suggest hope / still have a chance
+      const hopeWords = [
+        'love', 'dream', 'hope', 'maybe', 'one day', 'miss',
+        'try', 'fight', 'passion', 'career', 'music', 'art',
+        'family', 'friend', 'future', 'better', 'grow', 'learn',
+        'goal', 'believe', 'create', 'build', 'change', 'new',
+        'start', 'beginning', 'chance', 'alive', 'purpose',
+        'worth', 'myself', 'self', 'healing', 'journey'
+      ];
+
+      let giveUpScore = 0;
+      let hopeScore = 0;
+
+      giveUpWords.forEach(w => { if (lower.includes(w)) giveUpScore += 2; });
+      hopeWords.forEach(w => { if (lower.includes(w)) hopeScore += 2; });
+
+      // Longer texts = more emotional investment = more attachment
+      if (len > 80) giveUpScore += 1;
+      if (len > 150) giveUpScore += 1;
+
+      // Question marks = uncertainty = still thinking about it = hope
+      const qMarks = (text.match(/\?/g) || []).length;
+      hopeScore += qMarks;
+
+      // Exclamation = intensity
+      const exMarks = (text.match(/!/g) || []).length;
+      if (exMarks > 1) giveUpScore += 1;
+
+      // If no keywords hit, use a weighted random with slight bias toward "give up" (it's funnier)
+      if (giveUpScore === 0 && hopeScore === 0) {
+        // Hash the text for consistent results
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+          hash = ((hash << 5) - hash) + text.charCodeAt(i);
+          hash |= 0;
+        }
+        return Math.abs(hash) % 100 < 55 ? 'giveup' : 'chance';
+      }
+
+      return giveUpScore >= hopeScore ? 'giveup' : 'chance';
+    }
+
+    function showResult(text) {
+      analyzeScreen.style.display = 'none';
+      resultScreen.style.display = 'flex';
+
+      const result = analyzeText(text);
+      const verdict = document.getElementById('verdict');
+      const verdictG1 = document.getElementById('verdictG1');
+      const verdictG2 = document.getElementById('verdictG2');
+      const verdictSub = document.getElementById('verdictSub');
+      const userEcho = document.getElementById('userEchoResult');
+      const metrics = document.getElementById('metrics');
+      const retryBtn = document.getElementById('retryBtn');
+
+      // Generate fake metrics
+      const denial = Math.floor(Math.random() * 40 + 60);
+      const attach = Math.floor(Math.random() * 50 + 50);
+      const hope = result === 'chance' ? Math.floor(Math.random() * 30 + 60) : Math.floor(Math.random() * 20 + 5);
+
+      document.getElementById('metricDenial').textContent = denial + '%';
+      document.getElementById('metricAttach').textContent = attach + '%';
+      document.getElementById('metricHope').textContent = hope + '%';
+
+      const giveUpMessages = [
+        "SOME DOORS CLOSE FOR A REASON.\nSTOP KNOCKING.",
+        "YOU ALREADY KNOW THE ANSWER.\nYOU JUST DON'T WANT TO HEAR IT.",
+        "HOLDING ON WON'T BRING IT BACK.\nLETTING GO WILL BRING YOU BACK.",
+        "THE UNIVERSE READ YOUR MESSAGE.\nIT LEFT YOU ON SEEN.",
+        "THIS ISN'T YOUR CHAPTER ANYMORE.\nTURN THE PAGE."
+      ];
+
+      const chanceMessages = [
+        "NOT EVERYTHING THAT HURTS\nIS MEANT TO BE RELEASED.",
+        "THE FACT THAT YOU'RE ASKING\nMEANS YOU STILL CARE.\nTHAT'S NOT WEAKNESS.",
+        "SOME THINGS ARE WORTH\nFIGHTING FOR.\nYOU KNOW WHICH ONES.",
+        "HOLD ON.\nBUT HOLD ON SMARTER\nTHIS TIME.",
+        "THE SIGNAL IS STILL THERE.\nDON'T LET THE NOISE\nDROWN IT OUT."
+      ];
+
+      if (result === 'giveup') {
+        const msg = 'GIVE UP';
+        verdict.textContent = msg;
+        verdictG1.textContent = msg;
+        verdictG2.textContent = msg;
+        verdict.className = 'verdict give-up';
+        verdictG1.className = 'verdict verdict-glitch g1 give-up';
+        verdictG2.className = 'verdict verdict-glitch g2 give-up';
+        verdictSub.textContent = giveUpMessages[Math.floor(Math.random() * giveUpMessages.length)];
+      } else {
+        const msg = 'U STILL HAVE A CHANCE';
+        verdict.textContent = msg;
+        verdictG1.textContent = msg;
+        verdictG2.textContent = msg;
+        verdict.className = 'verdict still-chance';
+        verdictG1.className = 'verdict verdict-glitch g1 still-chance';
+        verdictG2.className = 'verdict verdict-glitch g2 still-chance';
+        verdictSub.textContent = chanceMessages[Math.floor(Math.random() * chanceMessages.length)];
+      }
+
+      userEcho.textContent = '"' + text + '"';
+
+      // Animate in
+      requestAnimationFrame(() => {
+        verdict.classList.add('show');
+        verdictSub.classList.add('show');
+        userEcho.classList.add('show');
+        metrics.classList.add('show');
+        retryBtn.classList.add('show');
+      });
+
+      // Screen flash
+      const flash = document.createElement('div');
+      flash.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:199;pointer-events:none;' +
+        'background:' + (result === 'giveup' ? 'rgba(255,0,85,0.15)' : 'rgba(0,255,136,0.15)') + ';';
+      document.body.appendChild(flash);
+      setTimeout(() => flash.remove(), 300);
+    }
+
+    function resetAll() {
+      resultScreen.style.display = 'none';
+      inputSection.style.display = 'flex';
+      input.value = '';
+      input.focus();
+
+      // Reset show classes
+      document.getElementById('verdict').classList.remove('show');
+      document.getElementById('verdictSub').classList.remove('show');
+      document.getElementById('userEchoResult').classList.remove('show');
+      document.getElementById('metrics').classList.remove('show');
+      document.getElementById('retryBtn').classList.remove('show');
+
+      // Reset scan
+      document.getElementById('scanBar').style.width = '0%';
+      document.getElementById('scanWords').textContent = '';
+      document.getElementById('analyzeText').textContent = 'SCANNING YOUR SOUL...';
+      document.getElementById('analyzeText').style.animation = 'blink-text 0.5s infinite';
+    }
+
+    // Focus input on load
+    window.addEventListener('load', () => input.focus());
+  </script>
+</body>
+</html>

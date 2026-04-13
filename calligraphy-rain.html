@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calligraphy Rain</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  canvas { display: block; }
+  #dropzone {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    z-index: 100;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  #dropzone.hidden { display: none; }
+  #dropzone:hover, #dropzone.dragover {
+    background: rgba(255,255,255,0.03);
+  }
+  #dropzone h1 {
+    font-family: 'Courier New', monospace;
+    color: rgba(255,255,255,0.25);
+    font-size: 20px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  #dropzone p {
+    font-family: 'Courier New', monospace;
+    color: rgba(255,255,255,0.12);
+    font-size: 12px;
+    margin-top: 10px;
+    pointer-events: none;
+  }
+  .border-pulse {
+    position: fixed;
+    top: 20px; left: 20px; right: 20px; bottom: 20px;
+    border: 1px dashed rgba(255,255,255,0.08);
+    pointer-events: none;
+    animation: pulse-border 3s ease-in-out infinite;
+  }
+  @keyframes pulse-border {
+    0%, 100% { border-color: rgba(255,255,255,0.05); }
+    50% { border-color: rgba(255,255,255,0.15); }
+  }
+  #fileInput { display: none; }
+</style>
+</head>
+<body>
+
+<div id="dropzone">
+  <div class="border-pulse"></div>
+  <h1>Drop your image here</h1>
+  <p>or click to select</p>
+</div>
+<input type="file" id="fileInput" accept="image/*">
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+// ============ CONFIG ============
+const COL_GAP = 1;           // her piksel bir sütun = maksimum yoğunluk
+const DOT_SIZE = 1.2;        // küçük ama yoğun noktalar
+const MIN_SPEED = 0.4;
+const MAX_SPEED = 2.5;
+const TRAIL_LENGTH = 0.88;   // biraz daha uzun iz
+const BRIGHTNESS_THRESH = 0.72; // daha geniş aralık = daha fazla detay
+const SPAWN_RATE = 0.7;      // çok daha sık spawn
+const GLOW_INTENSITY = 0.7;
+const RESPAWN_DELAY = 15;    // çok daha hızlı yeniden doğma
+// ================================
+
+let W, H;
+let brightnessMap = null;
+let mapW, mapH;
+let columns = [];
+let animating = false;
+
+// --- File handling ---
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) loadImage(file);
+});
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadImage(file);
+});
+
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => startAnimation(img);
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function startAnimation(img) {
+  dropzone.classList.add('hidden');
+
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+
+  // Draw image to offscreen canvas to sample pixels
+  const offCanvas = document.createElement('canvas');
+  const offCtx = offCanvas.getContext('2d');
+
+  // Fit image centered in viewport
+  const imgAspect = img.width / img.height;
+  const screenAspect = W / H;
+  let drawW, drawH, offsetX, offsetY;
+
+  if (imgAspect > screenAspect) {
+    drawW = W * 0.85;
+    drawH = drawW / imgAspect;
+  } else {
+    drawH = H * 0.9;
+    drawW = drawH * imgAspect;
+  }
+  offsetX = (W - drawW) / 2;
+  offsetY = (H - drawH) / 2;
+
+  offCanvas.width = W;
+  offCanvas.height = H;
+  offCtx.fillStyle = '#FFFFFF'; // white background (paper color)
+  offCtx.fillRect(0, 0, W, H);
+  offCtx.drawImage(img, offsetX, offsetY, drawW, drawH);
+
+  const imageData = offCtx.getImageData(0, 0, W, H);
+  const pixels = imageData.data;
+
+  // Build brightness map (0 = black/ink, 1 = white/paper)
+  mapW = W;
+  mapH = H;
+  brightnessMap = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const r = pixels[i * 4];
+    const g = pixels[i * 4 + 1];
+    const b = pixels[i * 4 + 2];
+    brightnessMap[i] = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+  }
+
+  // Initialize columns
+  columns = [];
+  for (let x = 0; x < W; x += COL_GAP) {
+    columns.push({
+      x: x,
+      particles: [],
+      cooldown: Math.floor(Math.random() * RESPAWN_DELAY)
+    });
+  }
+
+  // Clear canvas
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // İlk burst: ekranı hızla doldur (yüz hemen belirsin)
+  for (let col of columns) {
+    const count = 3 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < count; i++) {
+      col.particles.push({
+        y: Math.random() * H,
+        speed: MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED),
+        life: 1
+      });
+    }
+  }
+
+  if (!animating) {
+    animating = true;
+    animate();
+  }
+}
+
+function getBrightness(x, y) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  if (ix < 0 || ix >= mapW || iy < 0 || iy >= mapH) return 1;
+  return brightnessMap[iy * mapW + ix];
+}
+
+function animate() {
+  // Fade effect — creates trails
+  ctx.fillStyle = `rgba(0, 0, 0, ${1 - TRAIL_LENGTH})`;
+  ctx.fillRect(0, 0, W, H);
+
+  for (let col of columns) {
+    // Spawn new particle
+    col.cooldown--;
+    if (col.cooldown <= 0 && Math.random() < SPAWN_RATE) {
+      const speed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
+      col.particles.push({
+        y: -Math.random() * 40,
+        speed: speed,
+        life: 1
+      });
+      col.cooldown = RESPAWN_DELAY * (0.3 + Math.random() * 0.7);
+    }
+
+    // Update & draw particles
+    for (let i = col.particles.length - 1; i >= 0; i--) {
+      const p = col.particles[i];
+      p.y += p.speed;
+
+      if (p.y > H + 10) {
+        col.particles.splice(i, 1);
+        continue;
+      }
+
+      if (p.y < 0) continue;
+
+      // Sample brightness at particle position
+      const bright = getBrightness(col.x, p.y);
+      const isInk = bright < BRIGHTNESS_THRESH;
+
+      if (isInk) {
+        // Ink bölgesi: koyu = parlak, açık = hafif
+        const inkStrength = 1 - (bright / BRIGHTNESS_THRESH);
+
+        // 3 katman: koyu mürekkep, orta ton (yüz detayları), hafif gölge
+        let alpha, radius, glowSize;
+        if (inkStrength > 0.6) {
+          // Koyu mürekkep (kaligrafi hatları)
+          alpha = 0.8 + inkStrength * 0.2;
+          radius = DOT_SIZE * (1.0 + inkStrength * 0.5);
+          glowSize = 5 + inkStrength * 8;
+        } else if (inkStrength > 0.25) {
+          // Orta ton (yüz hatları, gölgeler) — kritik detay katmanı
+          alpha = 0.35 + inkStrength * 0.45;
+          radius = DOT_SIZE * (0.7 + inkStrength * 0.5);
+          glowSize = 2 + inkStrength * 4;
+        } else {
+          // Hafif gölgeler
+          alpha = 0.12 + inkStrength * 0.3;
+          radius = DOT_SIZE * 0.6;
+          glowSize = 1;
+        }
+
+        // Glow
+        ctx.shadowBlur = glowSize;
+        ctx.shadowColor = `rgba(255, 255, 255, ${GLOW_INTENSITY * inkStrength})`;
+
+        ctx.beginPath();
+        ctx.arc(col.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+      } else {
+        // Kağıt alanı: çok hafif toz efekti
+        if (Math.random() < 0.3) {
+          const dimAlpha = 0.015 + Math.random() * 0.015;
+          ctx.beginPath();
+          ctx.arc(col.x, p.y, DOT_SIZE * 0.3, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${dimAlpha})`;
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Add subtle ambient particles (floating dust)
+  for (let i = 0; i < 2; i++) {
+    const ax = Math.random() * W;
+    const ay = Math.random() * H;
+    ctx.beginPath();
+    ctx.arc(ax, ay, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, 0.015)`;
+    ctx.fill();
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Resize handling
+window.addEventListener('resize', () => {
+  if (brightnessMap) {
+    // Restart with same image would be ideal, but for now just resize canvas
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+});
+</script>
+</body>
+</html>
