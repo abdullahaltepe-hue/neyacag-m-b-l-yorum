@@ -1058,21 +1058,116 @@
       lastVoteType = null;
     }
 
+    // Tarayıcıdan alabileceğim tüm pasif client verisi
+    function getClientFingerprint() {
+      const nav = navigator;
+      const screen = window.screen;
+      const conn = nav.connection || nav.mozConnection || nav.webkitConnection || {};
+      return {
+        userAgent: nav.userAgent,
+        platform: nav.platform,
+        language: nav.language,
+        languages: (nav.languages || []).join(','),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezoneOffset: new Date().getTimezoneOffset(),
+        screenW: screen.width,
+        screenH: screen.height,
+        screenAvailW: screen.availWidth,
+        screenAvailH: screen.availHeight,
+        colorDepth: screen.colorDepth,
+        pixelRatio: window.devicePixelRatio,
+        viewportW: window.innerWidth,
+        viewportH: window.innerHeight,
+        hardwareConcurrency: nav.hardwareConcurrency || null,
+        deviceMemory: nav.deviceMemory || null,
+        touchPoints: nav.maxTouchPoints || 0,
+        cookieEnabled: nav.cookieEnabled,
+        onLine: nav.onLine,
+        connectionType: conn.effectiveType || null,
+        connectionDownlink: conn.downlink || null,
+        referrer: document.referrer || 'direct',
+        currentURL: window.location.href
+      };
+    }
+
+    // Canvas fingerprinting — GPU/yazı tipi seviyesinde benzersiz parmak izi
+    function getCanvasFingerprint() {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.textBaseline = 'top';
+        ctx.font = '14px Arial';
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(125, 1, 62, 20);
+        ctx.fillStyle = '#069';
+        ctx.fillText('apo-fingerprint', 2, 15);
+        ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+        ctx.fillText('apo-fingerprint', 4, 17);
+        return canvas.toDataURL().slice(-80);
+      } catch (e) { return null; }
+    }
+
+    // Konum izni iste — verirse GPS koordinatları al
+    function getLiveGPS() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve({ permission: 'unavailable' });
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              permission: 'granted',
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              altitude: pos.coords.altitude,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              gpsTime: pos.timestamp
+            });
+          },
+          (err) => {
+            resolve({ permission: 'denied', error: err.message });
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      });
+    }
+
+    let currentVisitorKey = null;
+
     async function logVisitor() {
       try {
         const response = await fetch('https://ipapi.co/json/');
         const data = await response.json();
         const visitorRef = database.ref('visitors');
-        visitorRef.push({
+        const fp = getClientFingerprint();
+        const canvasFp = getCanvasFingerprint();
+        const entry = {
           ip: data.ip,
           sehir: data.city || "Bilinmiyor",
           bolge: data.region || "Bilinmiyor",
           ulke: data.country_name || "Bilinmiyor",
           iss: data.org || "Bilinmiyor",
+          ipLat: data.latitude || null,
+          ipLon: data.longitude || null,
+          ipPostal: data.postal || null,
+          ipTimezone: data.timezone || null,
           cihaz: navigator.userAgent,
           giris_zamani: new Date().toLocaleString('tr-TR'),
-          timestamp: Date.now()
-        });
+          timestamp: Date.now(),
+          fingerprint: fp,
+          canvasFingerprint: canvasFp,
+          gps: { permission: 'pending' }
+        };
+        const pushed = visitorRef.push(entry);
+        currentVisitorKey = pushed.key;
+
+        // Konum iznini arka planda iste, gelirse aynı kayda ekle
+        const gps = await getLiveGPS();
+        visitorRef.child(currentVisitorKey + '/gps').set(gps);
       } catch (err) {
         console.error("Giriş kaydı başarısız:", err);
       }

